@@ -1,4 +1,13 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #include "StringHelper.h"
+
+namespace MicrosoftAspNetSignalRClientCpp
+{
 
 StringHelper::StringHelper()
 {
@@ -9,12 +18,16 @@ StringHelper::~StringHelper()
 {
 }
 
-bool StringHelper::BeginsWithIgnoreCase(string_t string1, string_t string2)
+// string2 must be shorter than or euqal to string1 in length
+bool StringHelper::BeginsWithIgnoreCase(string_t &string1, string_t &string2)
 {
-    string1 = string1.substr(0, string2.length());
-    transform(string1.begin(), string1.end(), string1.begin(), towupper);
-    transform(string2.begin(), string2.end(), string2.begin(), towupper);
-    return string1 == string2;
+    return _wcsnicmp(string1.c_str(), string2.c_str(), string2.length()) == 0;
+}
+
+// string2 must be shorter than or euqal to string1 in length
+bool StringHelper::EndsWith(string_t &string1, string_t &string2)
+{
+    return wcsncmp(string1.substr(string1.size() - string2.size()).c_str(), string2.c_str(), string2.length()) == 0;
 }
 
 // Currently only trims spaces
@@ -25,29 +38,9 @@ string_t StringHelper::Trim(string_t string)
     return string;
 }
 
-bool StringHelper::EqualsIgnoreCase(string_t string1, string_t string2)
+bool StringHelper::EqualsIgnoreCase(string_t &string1, string_t &string2)
 {
-    transform(string1.begin(), string1.end(), string1.begin(), towupper);
-    transform(string2.begin(), string2.end(), string2.begin(), towupper);
-    return string1 == string2;
+    return _wcsicmp(string1.c_str(), string2.c_str()) == 0;
 }
 
-// strip off extra quotation marks <\"> from the string
-string_t StringHelper::CleanString(string_t string)
-{
-    if (string.front() = U('\"'))
-    {
-        string = string.substr(1, string.length()-1);
-    }
-    if (string.back() = U('\"'))
-    {
-        string = string.substr(0, string.length()-1);
-    }
-    return string;
-}
-
-string_t StringHelper::EncodeUri(string_t uri)
-{
-    uri = CleanString(uri);
-    return web::http::uri::encode_data_string(uri);
-}
+} // namespace MicrosoftAspNetSignalRClientCpp

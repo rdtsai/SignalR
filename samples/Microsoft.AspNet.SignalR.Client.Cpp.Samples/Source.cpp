@@ -1,6 +1,15 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
+
 #include <ctime>
 #include <http_client.h>
 #include "Connection.h"
+
+// for testing only
 #include "TaskAsyncHelper.h"
 
 #define _CRTDBG_MAP_ALLOC
@@ -10,6 +19,7 @@
 using namespace utility;
 using namespace std;
 using namespace web::json;
+using namespace MicrosoftAspNetSignalRClientCpp;
 
 static void RunStreamingSample()
 {
@@ -23,35 +33,34 @@ static void RunStreamingSample()
 
     if (key == U("1") || key == U("2"))
     {
-        key.~basic_string(); // Memory leak detector complains that key is lost
-
-        shared_ptr<Connection> connection = shared_ptr<Connection>(new Connection(U("http://localhost:40476/raw-connection")));
+        auto connection = shared_ptr<MicrosoftAspNetSignalRClientCpp::Connection>(new MicrosoftAspNetSignalRClientCpp::Connection(U("http://localhost:40476/raw-connection")));
     
-        connection->Received = [](string_t message)
+        connection->SetReceivedCallback([](string_t message)
         {
             wcout << message << endl;
-        };
+        });
 
-        connection->Reconnected = []()
+        connection->SetReconnectedCallback([]()
         {
             time_t now = time(0);
-            struct tm* nowStruct = localtime(&now); // localtime is C++ ISO compliant, only MS mark it as deprecated
+            struct tm nowStruct;
+            localtime_s(&nowStruct, &now); // this only works in visual studios, should use localtime for linux
 
-            wcout << "[" << (nowStruct->tm_mon + 1) << "-" << nowStruct->tm_mday << "-" << (nowStruct->tm_year + 1900) << " "
-                << nowStruct->tm_hour << ":" << nowStruct->tm_min << ":" << nowStruct->tm_sec << "]: Connection restablished" << endl;
-        };
+            wcout << "[" << (nowStruct.tm_mon + 1) << "-" << nowStruct.tm_mday << "-" << (nowStruct.tm_year + 1900) << " "
+                << nowStruct.tm_hour << ":" << nowStruct.tm_min << ":" << nowStruct.tm_sec << "]: Connection restablished" << endl;
+        });
 
-        connection->StateChanged = [](shared_ptr<StateChange> stateChange)
+        connection->SetStateChangedCallback([](StateChange stateChange)
         {
-            wcout << stateChange->GetOldStateName() << " => " << stateChange->GetNewStateName() << endl;
-        };
+            wcout << ConnectionStateString::ToString(stateChange.GetOldState()) << " => " << ConnectionStateString::ToString(stateChange.GetNewState()) << endl;
+        });
 
-        connection->Error = [](exception& ex)
+        connection->SetErrorCallback([](exception& ex)
         {
             wcerr << U("========ERROR==========") << endl;
             wcerr << ex.what() << endl;
             wcerr << U("=======================") << endl;
-        };
+        });
 
         try
         {
@@ -68,12 +77,14 @@ static void RunStreamingSample()
             return;
         }
 
+        connection->SetTraceLevel(TraceLevel::All);
+        connection->SetTraceWriter(cout);
+
         string_t line;
         getline(wcin, line);
 
         while (!line.empty())
         {
-            // is there a better way to pass anonymous objects?
             value::field_map object;
             object.push_back(make_pair(value(U("type")), value(1)));
             object.push_back(make_pair(value(U("value")), value(line)));
@@ -89,10 +100,20 @@ static void RunStreamingSample()
 
 static void RunDelaySample()
 {
-    TaskAsyncHelper::Delay(seconds(1)).then([]()
+    // pplx::create_delayed_task exist in the documentation but is yet to be released
+    pplx::cancellation_token_source ctsOne, ctsTwo;
+    
+    TaskAsyncHelper::Delay(seconds(5), ctsTwo.get_token()).then([]()
+    {
+        cout << "Cancel me!" << endl;
+    });
+
+    TaskAsyncHelper::Delay(seconds(1), ctsOne.get_token()).then([]()
     {
         cout << "I'm done!" << endl;
     }).wait();
+
+    ctsTwo.cancel();
 }
 
 int main () 

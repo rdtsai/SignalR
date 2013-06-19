@@ -1,6 +1,15 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #include "ChunkBuffer.h"
 
-ChunkBuffer::ChunkBuffer(void)
+namespace MicrosoftAspNetSignalRClientCpp
+{
+
+ChunkBuffer::ChunkBuffer()
 {
     mOffset = 0;
     mBuffer = U("");
@@ -8,9 +17,8 @@ ChunkBuffer::ChunkBuffer(void)
 }
 
 
-ChunkBuffer::~ChunkBuffer(void)
+ChunkBuffer::~ChunkBuffer()
 {
-
 }
 
 bool ChunkBuffer::HasChuncks()
@@ -21,9 +29,7 @@ bool ChunkBuffer::HasChuncks()
 void ChunkBuffer::Add(shared_ptr<char> buffer)
 {
     string str(buffer.get());
-    string_t wstr;
-    wstr.assign(str.begin(), str.end());
-    mBuffer = mBuffer.append(wstr);
+    mBuffer = mBuffer.append(string_t(str.begin(), str.end()));
     str.clear();
 }
 
@@ -46,3 +52,5 @@ string_t ChunkBuffer::ReadLine()
     }
     return U("");
 }
+
+} // namespace MicrosoftAspNetSignalRClientCpp

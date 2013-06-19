@@ -42,9 +42,6 @@
     <ClCompile Include="Connection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="LongPollingTransport.cpp">
       <Filter>Source Files\Transport</Filter>
     </ClCompile>
@@ -84,9 +81,6 @@
     <ClCompile Include="StringHelper.cpp">
       <Filter>Source Files\Infrastructure</Filter>
     </ClCompile>
-    <ClCompile Include="IConnection.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="HttpRequestWrapper.cpp">
       <Filter>Source Files\Http</Filter>
     </ClCompile>
@@ -94,6 +88,24 @@
       <Filter>Source Files\Infrastructure</Filter>
     </ClCompile>
     <ClCompile Include="NegotiationResponse.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ConnectingMessageBuffer.cpp">
+      <Filter>Source Files\Transport</Filter>
+    </ClCompile>
+    <ClCompile Include="ExceptionHelper.cpp">
+      <Filter>Source Files\Infrastructure</Filter>
+    </ClCompile>
+    <ClCompile Include="TransportInitializationHandler.cpp">
+      <Filter>Source Files\Infrastructure</Filter>
+    </ClCompile>
+    <ClCompile Include="TransportAbortHandler.cpp">
+      <Filter>Source Files\Infrastructure</Filter>
+    </ClCompile>
+    <ClCompile Include="HeartBeatMonitor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="KeepAliveData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -146,9 +158,6 @@
     <ClInclude Include="StringHelper.h">
       <Filter>Header Files\Infrastructure</Filter>
     </ClInclude>
-    <ClInclude Include="IConnection.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="HttpRequestWrapper.h">
       <Filter>Header Files\Http</Filter>
     </ClInclude>
@@ -157,6 +166,27 @@
     </ClInclude>
     <ClInclude Include="TaskAsyncHelper.h">
       <Filter>Header Files\Infrastructure</Filter>
+    </ClInclude>
+    <ClInclude Include="ConnectingMessageBuffer.h">
+      <Filter>Header Files\Transports</Filter>
+    </ClInclude>
+    <ClInclude Include="ExceptionHelper.h">
+      <Filter>Header Files\Infrastructure</Filter>
+    </ClInclude>
+    <ClInclude Include="TransportInitializationHandler.h">
+      <Filter>Header Files\Infrastructure</Filter>
+    </ClInclude>
+    <ClInclude Include="TransportAbortHandler.h">
+      <Filter>Header Files\Infrastructure</Filter>
+    </ClInclude>
+    <ClInclude Include="HeartBeatMonitor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="KeepAliveData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TraceLevels.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

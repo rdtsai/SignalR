@@ -1,6 +1,15 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #include "AsyncStreamReader.h"
 
-AsyncStreamReader::AsyncStreamReader(Concurrency::streams::basic_istream<uint8_t> stream)
+namespace MicrosoftAspNetSignalRClientCpp
+{
+
+AsyncStreamReader::AsyncStreamReader(streams::basic_istream<uint8_t> stream)
 {
     mStream = stream;
     mReadingState = State::Initial;
@@ -9,12 +18,11 @@ AsyncStreamReader::AsyncStreamReader(Concurrency::streams::basic_istream<uint8_t
 
 AsyncStreamReader::~AsyncStreamReader(void)
 {
-    // cancel any ongoing reads
-    mReadCts.cancel();
 }
 
 void AsyncStreamReader::Start()
 {
+
     State initial = State::Initial;
 
     if (atomic_compare_exchange_strong<State>(&mReadingState, &initial, State::Processing))
@@ -24,7 +32,7 @@ void AsyncStreamReader::Start()
         };
 
         // FIX: Potential memory leak if Close is called between the CompareExchange and here.
-        pReadBuffer = shared_ptr<char>(new char[4096]);
+        pReadBuffer = shared_ptr<char>(new char[4096], [](char *s){delete[] s;});
 
         // Start the process loop
         Process();
@@ -40,7 +48,7 @@ READ:
         lock_guard<mutex> lock(mBufferLock);
         if(IsProcessing() && pReadBuffer != nullptr)
         {
-            readTask = AsyncReadIntoBuffer(&pReadBuffer, mStream);
+            readTask = AsyncReadIntoBuffer(mStream);
         }
         else
         {
@@ -49,17 +57,23 @@ READ:
     }
 
     if (readTask.is_done())
-    {
-        try
-        {
-            long read = readTask.get();
+    {        
+        unsigned int bytesRead;
+        exception ex;
+        TaskStatus status = TaskAsyncHelper::RunTaskToCompletion<unsigned int>(readTask, bytesRead, ex);
 
-            if (TryProcessRead(read))
+        if (status == TaskStatus::TaskCompleted)
+        {
+            if (TryProcessRead(bytesRead))
             {
                 goto READ;
             }
         }
-        catch (exception& ex)
+        else if (status == TaskStatus::TaskCanceled)
+        {
+            Close(OperationCanceledException("readTask"));
+        }
+        else
         {
             Close(ex);
         }
@@ -72,12 +86,26 @@ READ:
 
 void AsyncStreamReader::ReadAsync(pplx::task<unsigned int> readTask)
 {
-    readTask.then([readTask, this](unsigned int bytesRead)
+    readTask.then([this](pplx::task<unsigned int> readTask)
     {
-        // how to differentiate between faulted and canceled tasks?
-        if (TryProcessRead(bytesRead))
+        unsigned int bytesRead;
+        exception ex;
+        TaskStatus status = TaskAsyncHelper::RunTaskToCompletion<unsigned int>(readTask, bytesRead, ex);
+        
+        if (status == TaskStatus::TaskCompleted)
         {
-            Process();
+            if (TryProcessRead(bytesRead))
+            {
+                Process();
+            }
+        }
+        else if (status == TaskStatus::TaskCanceled)
+        {
+            Close(OperationCanceledException("readTask"));
+        }
+        else
+        {
+            Close(ex);
         }
     });
 }
@@ -113,7 +141,7 @@ bool AsyncStreamReader::IsProcessing()
 
 void AsyncStreamReader::Close()
 {
-    Close(exception(""));
+    Close(ExceptionNone("none"));
 }
 
 void AsyncStreamReader::Close(exception& ex)
@@ -124,6 +152,7 @@ void AsyncStreamReader::Close(exception& ex)
     {
         if (Closed != nullptr)
         {
+            lock_guard<mutex> lock(mClosedLock);
             Closed(ex);
         }
 
@@ -138,6 +167,7 @@ void AsyncStreamReader::OnOpened()
 {
     if (Opened != nullptr)
     {
+        lock_guard<mutex> lock(mOpenedLock);
         Opened();
     }
 }
@@ -146,27 +176,54 @@ void AsyncStreamReader::OnData(shared_ptr<char> buffer)
 {
     if (Data != nullptr)
     {
+        lock_guard<mutex> lock(mDataLock);
         Data(buffer);
     }
 }
 
-// returns a task that reads the incoming stream and stored the messages into a buffer
-task<unsigned int> AsyncStreamReader::AsyncReadIntoBuffer(shared_ptr<char>* buffer, Concurrency::streams::basic_istream<uint8_t> stream)
+void AsyncStreamReader::Abort()
 {
-    concurrency::streams::container_buffer<string> inStringBuffer;
-    task_options readTaskOptions(mReadCts.get_token());
-    return stream.read(inStringBuffer, 4096).then([inStringBuffer, buffer](size_t bytesRead)
+    mReadCts.cancel();
+}
+
+// returns a task that reads the incoming stream and stored the messages into a buffer
+pplx::task<unsigned int> AsyncStreamReader::AsyncReadIntoBuffer(Concurrency::streams::basic_istream<uint8_t> stream)
+{
+    auto inStringBuffer = shared_ptr<streams::container_buffer<string>>(new streams::container_buffer<string>());
+    pplx::task_options readTaskOptions(mReadCts.get_token());
+    return stream.read(*(inStringBuffer.get()), 4096).then([inStringBuffer, this](size_t bytesRead)
     {
         if (is_task_cancellation_requested())
         {
             cancel_current_task();
         }
 
-        string &text = inStringBuffer.collection();
-        (*buffer) = shared_ptr<char>(new char[text.length() + 1]);
-        int length = text.length();
-        strcpy((*buffer).get(), text.c_str());
+        string &text = inStringBuffer->collection();
+
+        int length = text.length() + 1;
+        pReadBuffer = shared_ptr<char>(new char[length], [](char *s){delete[] s;});
+        strcpy_s(pReadBuffer.get(), length, text.c_str()); // this only works in visual studio, should use strcpy for linux
 
         return (unsigned int)bytesRead;
     }, readTaskOptions);
 }
+
+void AsyncStreamReader::SetOpenedCallback(function<void()> opened)
+{
+    lock_guard<mutex> lock(mOpenedLock);
+    Opened = opened;
+}
+
+void AsyncStreamReader::SetClosedCallback(function<void(exception& ex)> closed)
+{
+    lock_guard<mutex> lock(mClosedLock);
+    Closed = closed;
+}
+
+void AsyncStreamReader::SetDataCallback(function<void(shared_ptr<char> buffer)> data)
+{
+    lock_guard<mutex> lock(mDataLock);
+    Data = data;
+}
+
+} // namespace MicrosoftAspNetSignalRClientCpp

@@ -1,3 +1,9 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #pragma once
 
 #include <string>
@@ -8,19 +14,23 @@ using namespace std;
 using namespace utility;
 using namespace web::json;
 
-class NegotiationResponse
+namespace MicrosoftAspNetSignalRClientCpp
 {
-public:
-    NegotiationResponse();
-    NegotiationResponse(value raw);
-    ~NegotiationResponse();
+    class NegotiationResponse
+    {
+    public:
+        NegotiationResponse();
+        NegotiationResponse(value raw);
+        ~NegotiationResponse();
 
-    // set members to private and write getters/setters?
-    string_t mConnectionId;
-    string_t mConnectionToken;
-    string_t mUri;
-    string_t mProtocolVersion;
-    double mDisconnectTimeout;
-	bool mTryWebSockets;
-	double mKeepAliveTimeout;
-};
+        // set members to private and write getters/setters?
+        string_t mConnectionId;
+        string_t mConnectionToken;
+        string_t mUri;
+        string_t mProtocolVersion;
+        int mDisconnectTimeout;
+	    bool mTryWebSockets;
+	    int mKeepAliveTimeout;
+        int mTransportConnectTimeout;
+    };
+} // namespace MicrosoftAspNetSignalRClientCpp

@@ -1,3 +1,9 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #pragma once
 
 #include "ConnectionState.h"
@@ -6,19 +12,19 @@
 using namespace std;
 using namespace utility;
 
-class StateChange
+namespace MicrosoftAspNetSignalRClientCpp
 {
-public:
-    StateChange(ConnectionState oldState, ConnectionState newState);
-    ~StateChange(void);
+    class StateChange
+    {
+    public:
+        StateChange(ConnectionState oldState, ConnectionState newState);
+        ~StateChange(void);
     
-    ConnectionState GetOldState();
-    string_t GetOldStateName(); // for tracing purposes
-    ConnectionState GetNewState();
-    string_t GetNewStateName(); // for tracing purposes
+        ConnectionState GetOldState();
+        ConnectionState GetNewState();
 
-private:
-    string_t StateName(ConnectionState state);
-    ConnectionState mOldState;
-    ConnectionState mNewState;
-};
+    private:
+        ConnectionState mOldState;
+        ConnectionState mNewState;
+    };
+} // namespace MicrosoftAspNetSignalRClientCpp

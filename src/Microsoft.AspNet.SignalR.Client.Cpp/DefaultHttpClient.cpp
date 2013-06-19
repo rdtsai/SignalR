@@ -1,48 +1,56 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #include "DefaultHttpClient.h"
+
+namespace MicrosoftAspNetSignalRClientCpp
+{
 
 DefaultHttpClient::DefaultHttpClient()
 {
-
 }
 
 DefaultHttpClient::~DefaultHttpClient()
 {
-
 }
 
 void DefaultHttpClient::Initialize(string_t uri)
 {
-    // Disabling the Http Client timeout by setting timeout to some large value (min 35 bits)
-    http_client_config configurationLong = http_client_config();
-    configurationLong.set_timeout(seconds(1<<31));
-    http_client_config configurationShort = http_client_config();
-    configurationShort.set_timeout(seconds(1<<31));
+    // Disabling the Http Client timeout by setting timeout to 0?
+    http_client_config configuration = http_client_config();
+    configuration.set_timeout(seconds(0));
 
-    pLongRunningClient = unique_ptr<http_client>(new http_client(uri, configurationLong));
-    pShortRunningClient = unique_ptr<http_client>(new http_client(uri, configurationShort));
+    pClient = unique_ptr<http_client>(new http_client(uri, configuration));
 }
     
-task<http_response> DefaultHttpClient::Get(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest, bool isLongRunning)
+task<http_response> DefaultHttpClient::Get(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest)
 {
     if (prepareRequest == nullptr)
     {
         throw exception("ArgumentNullException: prepareRequest");
     }
 
-    shared_ptr<cancellation_token_source> cts = shared_ptr<cancellation_token_source>(new cancellation_token_source());
+    auto cts = shared_ptr<cancellation_token_source>(new cancellation_token_source());
 
-    http_request requestMessage = http_request(methods::GET);
+    auto requestMessage = http_request(methods::GET);
     requestMessage.set_request_uri(uri);
     
-    shared_ptr<HttpRequestWrapper> request = shared_ptr<HttpRequestWrapper>(new HttpRequestWrapper(requestMessage, [cts]()
+    auto request = shared_ptr<HttpRequestWrapper>(new HttpRequestWrapper(requestMessage, [cts]()
     {
         cts->cancel();
     }));
 
     prepareRequest(request);
-
-     return (isLongRunning ? pLongRunningClient : pShortRunningClient)->request(requestMessage).then([](http_response response)
+    pplx::task_options readTaskOptions(cts->get_token());
+    return pClient->request(requestMessage).then([](http_response response)
     {
+        if (is_task_cancellation_requested())
+        {
+            cancel_current_task();
+        }
         // check if the request was successful, temporary
         if (response.status_code()/100 != 2)
         {
@@ -50,41 +58,47 @@ task<http_response> DefaultHttpClient::Get(string_t uri, function<void(shared_pt
         }
 
         return response;
-    });
+    }, readTaskOptions);
 }
 
-task<http_response> DefaultHttpClient::Post(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest, bool isLongRunning)
+task<http_response> DefaultHttpClient::Post(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest)
 {
-    return Post(uri, prepareRequest, U(""), isLongRunning);
+    return Post(uri, prepareRequest, U(""));
 }
 
-task<http_response> DefaultHttpClient::Post(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest, string_t postData, bool isLongRunning)
+task<http_response> DefaultHttpClient::Post(string_t uri, function<void(shared_ptr<HttpRequestWrapper>)> prepareRequest, string_t postData)
 {
     if (prepareRequest == nullptr)
     {
         throw exception("ArgumentNullException: prepareRequest");
     }
-    shared_ptr<cancellation_token_source> cts = shared_ptr<cancellation_token_source>(new cancellation_token_source());
+    auto cts = shared_ptr<cancellation_token_source>(new cancellation_token_source());
 
-    http_request requestMessage = http_request(methods::POST);
+    auto requestMessage = http_request(methods::POST);
     requestMessage.set_request_uri(uri);
     requestMessage.set_body(postData);
 
-    shared_ptr<HttpRequestWrapper> request = shared_ptr<HttpRequestWrapper>(new HttpRequestWrapper(requestMessage, [cts]()
+    auto request = shared_ptr<HttpRequestWrapper>(new HttpRequestWrapper(requestMessage, [cts]()
     {
         cts->cancel();
     }));
 
     prepareRequest(request);
-
-    return (isLongRunning ? pLongRunningClient : pShortRunningClient)->request(requestMessage).then([](http_response response)
+    pplx::task_options readTaskOptions(cts->get_token());
+    return pClient->request(requestMessage).then([](http_response response)
     {
+        if (is_task_cancellation_requested())
+        {
+            cancel_current_task();
+        }
         // check if the request was successful, temporary
         if (response.status_code()/100 != 2)
         {
-            throw exception("HttpClientException: Get Failed");
+            throw exception("HttpClientException: Post Failed");
         }
 
         return response;
-    });
+    }, readTaskOptions);
 }
+
+} // namespace MicrosoftAspNetSignalRClientCpp

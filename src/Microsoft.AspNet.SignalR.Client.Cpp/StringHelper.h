@@ -1,20 +1,28 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #pragma once
 
-#include <algorithm>
 #include "http_client.h"
 
 using namespace utility;
 
-class StringHelper
+namespace MicrosoftAspNetSignalRClientCpp
 {
-public:
-    StringHelper();
-    ~StringHelper();
+    // should this be a namespace instead?
+    class StringHelper
+    {
+    public:
+        StringHelper();
+        ~StringHelper();
 
-    // useful string operations that are missing in C++
-    static bool BeginsWithIgnoreCase(string_t string1, string_t string2);
-    static string_t Trim(string_t string);
-    static bool EqualsIgnoreCase(string_t string1, string_t string2);
-    static string_t CleanString(string_t uri);  // removes extra quotation marks at the front and back of the strings
-    static string_t EncodeUri(string_t uri);
-};
+        // useful string operations that are missing in C++
+        static bool BeginsWithIgnoreCase(string_t &string1, string_t &string2);
+        static bool EndsWith(string_t &string1, string_t &string2);
+        static string_t Trim(string_t string);
+        static bool EqualsIgnoreCase(string_t &string1, string_t &string2);
+    };
+} // namespace MicrosoftAspNetSignalRClientCpp

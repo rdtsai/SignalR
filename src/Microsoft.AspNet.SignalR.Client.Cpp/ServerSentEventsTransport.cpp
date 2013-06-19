@@ -1,33 +1,67 @@
+//Copyright (c) Microsoft Corporation
+//
+//All rights reserved.
+//
+//THIS CODE IS PROVIDED ON AN *AS IS* BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION ANY IMPLIED WARRANTIES OR CONDITIONS OF TITLE, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABLITY, OR NON-INFRINGEMENT.
+
 #include "ServerSentEventsTransport.h"
+
+namespace MicrosoftAspNetSignalRClientCpp
+{
 
 ServerSentEventsTransport::ServerSentEventsTransport(shared_ptr<IHttpClient> httpClient) : 
     HttpBasedTransport(httpClient, U("serverSentEvents"))
 {
+    mConnectionTimeout = seconds(5);
+    mReconnectDelay = seconds(2);
 }
 
 ServerSentEventsTransport::~ServerSentEventsTransport()
 {
-    mConnectionTimeout = seconds(2);
-    mReconnectDelay = seconds(5);
+    int count = pInitializeHandler.use_count();
 }
 
 void ServerSentEventsTransport::OnAbort()
 {
     // need to clear all the function<> variables to prevent circular referencing
-    pEventSource->Opened = [](){};
-    pEventSource->Closed = [](exception& ex){};
-    pEventSource->Data = [](shared_ptr<char> buffer){};
-    pEventSource->Message = [](shared_ptr<SseEvent> sseEvent){};
+    pEventSource->SetOpenedCallback([](){});
+    pEventSource->SetClosedCallback([](exception&){});
+    pEventSource->SetDataCallback([](shared_ptr<char>){});
+    pEventSource->SetMessageCallback([](shared_ptr<SseEvent>){});
 }
 
-void ServerSentEventsTransport::OnStart(shared_ptr<Connection> connection, string_t data, pplx::cancellation_token disconnectToken,  function<void()> initializeCallback, function<void(exception)> errorCallback)
+void ServerSentEventsTransport::OnStart(shared_ptr<Connection> connection, string_t data, pplx::cancellation_token disconnectToken,  shared_ptr<TransportInitializationHandler> initializeHandler)
 {    
-    OpenConnection(connection, data, disconnectToken, initializeCallback, errorCallback);
+    if (initializeHandler == nullptr)
+    {
+        throw exception("ArgumentNullException: initializeHandler");
+    }
+
+    initializeHandler->SetOnFailureCallback([this]()
+    {
+        mStop = true;
+        pRequest->Abort();
+    });
+
+    pInitializeHandler = initializeHandler;
+
+    function<void()> successCallback = [this]()
+    {
+        pInitializeHandler->Success();
+        pInitializeHandler.reset();
+    };
+    function<void(exception&)> errorCallback = [this](exception& ex)
+    {
+        pInitializeHandler->Fail(ex);
+        pInitializeHandler.reset();
+    };
+
+    OpenConnection(connection, data, disconnectToken, successCallback, errorCallback);
 }
 
 void ServerSentEventsTransport::Reconnect(shared_ptr<Connection> connection, string_t data, pplx::cancellation_token disconnectToken)
 {
-    TaskAsyncHelper::Delay(mReconnectDelay).then([this, connection, disconnectToken, data]()
+    TaskAsyncHelper::Delay(mReconnectDelay, disconnectToken).then([this, connection, disconnectToken, data]()
     {
         if (disconnectToken.is_canceled() && connection->EnsureReconnecting())
         {
@@ -47,86 +81,167 @@ void ServerSentEventsTransport::OpenConnection(shared_ptr<Connection> connection
 
     string_t uri = connection->GetUri() + (reconnecting ? U("reconnect") : U("connect")) + GetReceiveQueryString(connection, data);
 
+    wstringstream ss;
+    ss << "SSE: GET " << uri;
+    connection->Trace(TraceLevel::Events, ss.str());
+
     GetHttpClient()->Get(uri, [this, connection](shared_ptr<HttpRequestWrapper> request)
     {
         pRequest = request;
         connection->PrepareRequest(request);
-    }, true).then([this, connection, data, disconnectToken, errorCallback, initializeInvoke](http_response response) 
+    }).then([this, connection, data, disconnectToken, errorCallback, initializeInvoke, reconnecting](pplx::task<http_response> connectRequest) 
     {
-        // check if the task failed
-
-        pEventSource = unique_ptr<EventSourceStreamReader>(new EventSourceStreamReader(response.body()));
-
-        mStop = false;
+        http_response response;
+        exception ex;
+        TaskStatus status = TaskAsyncHelper::RunTaskToCompletion<http_response>(connectRequest, response, ex);
         
-        disconnectToken.register_callback<function<void()>>([this]()
+        if (status == TaskStatus::TaskFaulted)
         {
-            mStop = true;
-            pRequest->Abort();
-        });
-
-        pEventSource->Opened = [connection]()
-        {
-            if (connection->ChangeState(ConnectionState::Reconnecting, ConnectionState::Connected))
+            if (!ExceptionHelper::IsRequestAborted(ex))
             {
-                connection->OnReconnected();
-            }
-        };
-
-        pEventSource->Message = [connection, this, initializeInvoke](shared_ptr<SseEvent> sseEvent) 
-        {
-            if (sseEvent->GetType() == EventType::Data)
-            {
-                if (StringHelper::EqualsIgnoreCase(sseEvent->GetData(), U("initialized")))
+                if (errorCallback != nullptr)
                 {
-                    return;
+                    pCallbackInvoker->Invoke<function<void(exception&)>, exception&>([](function<void(exception&)> cb, exception& ex)
+                    {
+                        cb(ex);        
+                    }, errorCallback, ex);
                 }
-
-                bool timedOut, disconnected;
-
-                TransportHelper::ProcessResponse(connection, sseEvent->GetData(), &timedOut, &disconnected, initializeInvoke);
-                disconnected = false;
-
-                if (disconnected)
+                else if (reconnecting)
                 {
-                    this->mStop = true;
-                    connection->Disconnect();
+                    // raise error event if failed to reconnect
+                    connection->OnError(ex);
+                    Reconnect(connection, data, disconnectToken);
                 }
             }
-        };
-
-        pEventSource->Closed = [this, connection, data, disconnectToken](exception& ex)
+            {
+                lock_guard<mutex> lock(mDeregisterRequestCancellationLock);
+                DeregisterRequestCancellation();
+                DeregisterRequestCancellation = [](){};
+            }
+        }
+        else if (status == TaskStatus::TaskCanceled)
         {
-            //if (ex != null)
-            //{
-            //    // Check if the request is aborted
-            //    bool isRequestAborted = ExceptionHelper.IsRequestAborted(exception);
+            return;
+        }
+        else
+        {
+            pEventSource = unique_ptr<EventSourceStreamReader>(new EventSourceStreamReader(connection, response.body()));
 
-            //    if (!isRequestAborted)
-            //    {
-            //        // Don't raise exceptions if the request was aborted (connection was stopped).
-            //        connection.OnError(exception);
-            //    }
-            //}
-
-            if (this->mStop)
+            mStop = false;
+            bool stop = false;
+        
+            // what is CancellationTokenExtensions.SafeRegister?
+            disconnectToken.register_callback<function<void()>>([this, stop]()
             {
-                CompleteAbort();
-            }
-            else if (TryCompleteAbort())
-            {
-                // Abort() was called, so don't reconnect
-            }
-            else
-            {
-                Reconnect(connection, data, disconnectToken);
-            }
-        };
+                mStop = true;
+                pRequest->Abort();
+            });
 
-        pEventSource->Start();
+            pEventSource->SetOpenedCallback([connection]()
+            {
+                if (connection->ChangeState(ConnectionState::Reconnecting, ConnectionState::Connected))
+                {
+                    connection->OnReconnected();
+                }
+            });
 
-        // some more code missing here
+            pEventSource->SetMessageCallback([connection, this, initializeInvoke, stop](shared_ptr<SseEvent> sseEvent) 
+            {
+                if (sseEvent->GetType() == EventType::Data)
+                {
+                    if (StringHelper::EqualsIgnoreCase(sseEvent->GetData(), string_t(U("initialized"))))
+                    {
+                        return;
+                    }
+
+                    bool timedOut, disconnected;
+
+                    TransportHelper::ProcessResponse(connection, sseEvent->GetData(), &timedOut, &disconnected, initializeInvoke);
+                    disconnected = false;
+
+                    if (disconnected)
+                    {
+                        mStop = true;
+                        connection->Disconnect();
+                    }
+                }
+            });
+
+            pEventSource->SetClosedCallback([connection, this, data, disconnectToken, stop](exception& ex)
+            {
+                if (!ExceptionHelper::IsNull(ex))
+                {
+                    // Check if the request is aborted
+                    if (!ExceptionHelper::IsRequestAborted(ex))
+                    {
+                        // Don't raise exceptions if the request was aborted (connection was stopped).
+                        connection->OnError(ex);
+                    }
+                }
+
+                {
+                    lock_guard<mutex> lock(mDeregisterRequestCancellationLock);
+                    DeregisterRequestCancellation();
+                    DeregisterRequestCancellation = [](){};
+                }
+
+                if (mStop)
+                {
+                    GetAbortHandler()->CompleteAbort();
+                }
+                else if (GetAbortHandler()->TryCompleteAbort())
+                {
+                    // Abort() was called, so don't reconnect
+                }
+                else
+                {
+                    Reconnect(connection, data, disconnectToken);
+                }
+            });
+
+            pEventSource->Start();
+        }
     });
+
+    auto requestCancellationRegistration = disconnectToken.register_callback([this, errorCallback]()
+    {
+        if (pRequest != nullptr)
+        {
+            pRequest->Abort();
+        }
+
+        if (errorCallback != nullptr)
+        {
+            pCallbackInvoker->Invoke<function<void(exception&)>>([](function<void(exception&)> cb)
+            {
+                cb(exception("Operation Canceled Exception: The connection was stopped before it could be started."));
+            }, errorCallback);
+        }
+    });
+
+    {
+        lock_guard<mutex> lock(mDeregisterRequestCancellationLock);
+        DeregisterRequestCancellation = [disconnectToken, requestCancellationRegistration]()
+        {
+            disconnectToken.deregister_callback(requestCancellationRegistration);
+        };
+    }
+
+    if (errorCallback != nullptr)
+    {
+        // the memory will eventually be reclaimed after 5 seconds (default) so it's not a leak here
+        TaskAsyncHelper::Delay(mConnectionTimeout).then([this, errorCallback]()
+        {
+            pCallbackInvoker->Invoke<function<void(exception)>>([this](function<void(exception)> errorCallback)
+            {
+                // Abort the request before cancelling
+                pRequest->Abort();
+
+                // Connection timeout occurred
+                errorCallback(exception("TimeoutException"));
+            }, errorCallback);
+        });
+    }
 }
 
 void ServerSentEventsTransport::LostConnection(shared_ptr<Connection> connection)
@@ -141,3 +256,5 @@ bool ServerSentEventsTransport::SupportsKeepAlive()
 {
     return true;
 }
+
+} // namespace MicrosoftAspNetSignalRClientCpp
